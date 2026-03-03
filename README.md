@@ -21,7 +21,7 @@ A minimal real-time chat server written in Go using WebSockets, with a built-in 
 
 ### Prerequisites
 
-- Go 1.18+
+- Go 1.21+
 
 ### Install & Run
 
