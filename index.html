@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Chat</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0f0f0f;
+        color: #e0e0e0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+      }
+
+      #chat-container {
+        width: 100%;
+        max-width: 640px;
+        height: 90vh;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #161616;
+      }
+
+      #chat-header {
+        padding: 16px 20px;
+        background: #1e1e1e;
+        border-bottom: 1px solid #2a2a2a;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      #status-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #555;
+        transition: background 0.3s;
+      }
+
+      #status-dot.connected {
+        background: #4caf50;
+      }
+      #status-dot.disconnected {
+        background: #f44336;
+      }
+
+      #chat-header span {
+        font-size: 15px;
+        font-weight: 600;
+        color: #ccc;
+      }
+
+      #status-text {
+        margin-left: auto;
+        font-size: 12px;
+        color: #666;
+      }
+
+      #messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      #messages::-webkit-scrollbar {
+        width: 5px;
+      }
+      #messages::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #messages::-webkit-scrollbar-thumb {
+        background: #2a2a2a;
+        border-radius: 10px;
+      }
+
+      .message {
+        max-width: 75%;
+        padding: 10px 14px;
+        border-radius: 16px;
+        font-size: 14px;
+        line-height: 1.5;
+        word-break: break-word;
+      }
+
+      .message.sent {
+        align-self: flex-end;
+        background: #2f6feb;
+        color: #fff;
+        border-bottom-right-radius: 4px;
+      }
+
+      .message.received {
+        align-self: flex-start;
+        background: #262626;
+        color: #e0e0e0;
+        border-bottom-left-radius: 4px;
+      }
+
+      .message .meta {
+        font-size: 11px;
+        opacity: 0.5;
+        margin-top: 4px;
+        text-align: right;
+      }
+
+      .system-msg {
+        align-self: center;
+        font-size: 12px;
+        color: #555;
+        padding: 4px 10px;
+      }
+
+      #input-area {
+        display: flex;
+        padding: 14px;
+        gap: 10px;
+        border-top: 1px solid #2a2a2a;
+        background: #1e1e1e;
+      }
+
+      #message-input {
+        flex: 1;
+        background: #262626;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 10px 14px;
+        color: #e0e0e0;
+        font-size: 14px;
+        outline: none;
+        resize: none;
+        height: 42px;
+        line-height: 1.4;
+      }
+
+      #message-input:focus {
+        border-color: #2f6feb;
+      }
+
+      #send-btn {
+        background: #2f6feb;
+        border: none;
+        border-radius: 8px;
+        padding: 0 18px;
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      #send-btn:hover {
+        background: #1a5bd6;
+      }
+      #send-btn:disabled {
+        background: #2a2a2a;
+        color: #555;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="chat-container">
+      <div id="chat-header">
+        <div id="status-dot" class="disconnected"></div>
+        <span>WebSocket Chat</span>
+        <span id="status-text">Connecting...</span>
+      </div>
+      <div id="messages"></div>
+      <div id="input-area">
+        <input
+          id="message-input"
+          type="text"
+          placeholder="Type a message..."
+          autocomplete="off"
+          disabled
+        />
+        <button id="send-btn" disabled>Send</button>
+      </div>
+    </div>
+
+    <script>
+      const messagesEl = document.getElementById("messages");
+      const input = document.getElementById("message-input");
+      const sendBtn = document.getElementById("send-btn");
+      const statusDot = document.getElementById("status-dot");
+      const statusText = document.getElementById("status-text");
+
+      let ws;
+
+      function connect() {
+        ws = new WebSocket("ws://localhost:8080/ws");
+
+        ws.onopen = () => {
+          statusDot.className = "connected";
+          statusText.textContent = "Connected";
+          input.disabled = false;
+          sendBtn.disabled = false;
+          addSystem("Connected to server");
+          input.focus();
+        };
+
+        ws.onmessage = (e) => {
+          addMessage(e.data, "received");
+        };
+
+        ws.onclose = () => {
+          statusDot.className = "disconnected";
+          statusText.textContent = "Disconnected — retrying in 3s";
+          input.disabled = true;
+          sendBtn.disabled = true;
+          addSystem("Disconnected. Reconnecting...");
+          setTimeout(connect, 3000);
+        };
+
+        ws.onerror = () => {
+          ws.close();
+        };
+      }
+
+      function send() {
+        const text = input.value.trim();
+        if (!text || ws.readyState !== WebSocket.OPEN) return;
+        addMessage(text, "sent");
+        ws.send(text);
+        input.value = "";
+      }
+
+      function addMessage(text, type) {
+        const now = new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        const div = document.createElement("div");
+        div.className = `message ${type}`;
+        div.innerHTML = `${escapeHtml(text)}<div class="meta">${now}</div>`;
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function addSystem(text) {
+        const div = document.createElement("div");
+        div.className = "system-msg";
+        div.textContent = text;
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function escapeHtml(str) {
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      sendBtn.addEventListener("click", send);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          send();
+        }
+      });
+
+      connect();
+    </script>
+  </body>
+</html>
